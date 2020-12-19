@@ -1,15 +1,34 @@
+import axios , { AxiosRequestConfig , AxiosError, AxiosResponse } from 'axios'
 import { isPowerOfTwo } from './util'
 
 type numArray = Array<number>
 type strArray = Array<string>
+type imageType = "default" | "guild_icon" | "user_avatar"
 type fileExtension = "png" | "jpeg" | "webp" | "gif"
 
-interface DiscordImage {
-    imageType : string;
-    imageHash : string;
+interface DiscordResponseData {
     id : string;
+    username : string;
+    discriminator : string;
+    public_flags : number;
+    avatar : string | null;
+}
+
+interface DiscordImage {
+    imageType : imageType;
     fileExtension : fileExtension;
+    imageHash? : string;
+    id? : string;
     size? : number;
+    discriminator? : number
+}
+
+interface DiscordUser {
+    id : string,
+    username : string,
+    avatar : string,
+    discriminator : string,
+    badges : strArray
 }
 
 enum discordBadges {
@@ -32,7 +51,7 @@ enum discordBadges {
 enum premiumTypes{
     "None",
     "Nitro Classic" = 1,
-    "Nitro" = 2
+    "Nitro" = 2 
 }
 
 function enumKeysAndValue(obj : object) : [string , number][]{
@@ -40,46 +59,47 @@ function enumKeysAndValue(obj : object) : [string , number][]{
 }
 
 const discordBadgesArray = enumKeysAndValue(discordBadges)
-const premiumTypesArray = enumKeysAndValue(premiumTypes)
 
 const getDiscordBadges = (flag : number) : string[] => {
-   const userBadges : strArray = []
+    const userBadges : strArray = []
     discordBadgesArray.forEach(([badgeName , badgeFlag]) => badgeFlag & flag && userBadges.push(badgeName))
 
     return userBadges
 }
 
+const getPremiumType = (flag : 0 | 1 | 2) : string => premiumTypes[flag]
+
+const getDate = (id : string) : { UTC : string , ISO : string , UNIX : number } => {
+    const unixInMilli = (+id / 4194304) + 1420070400000
+    const discordDate = new Date(unixInMilli)
+
+    return {
+        UTC : discordDate.toUTCString(),
+        ISO : discordDate.toISOString(),
+        UNIX : unixInMilli / 1000 | 1
+    }
+}
+
 const getImage = (obj : DiscordImage) : string => {
-    const { imageHash , imageType , id , fileExtension , size } = obj
+    const { imageHash , imageType , id , fileExtension , size , discriminator } = obj
     const baseURL = "https://cdn.discordapp.com"
     let imageURL = baseURL
 
     imageType.toLowerCase()
 
-    // User_avatar and guild_icon has no checks but it supports all file extensions.
     switch(imageType){
         case "user_avatar":
-            if(imageHash.startsWith("a_")){
-                imageURL += `/avatars/${id}/${imageHash}.${fileExtension}`
-                break
-            }
-
-            imageURL += `/avatars/${id}/${imageHash}.${fileExtension}`
-            break
         case "guild_icon":
-            if(imageHash.startsWith("a_")){
-                imageURL += `/icons/${id}/${imageHash}.${fileExtension}`
-                break
-            }
+            if(!id || !fileExtension || !imageHash) throw new Error("File extension, id , or image hash object property is missing.")    
 
-            imageURL += `/icons/${id}/${imageHash}.${fileExtension}`
-            break
-        case "guild_banner":
-            if(fileExtension === "gif") throw new Error(`Guild banners can't be a GIF.`)   
+            if(imageType === "user_avatar") imageURL += `/avatars/${id}/${imageHash}.${fileExtension}`
+            if(imageType === "guild_icon") imageURL += `/icons/${id}/${imageHash}.${fileExtension}`
 
-            imageURL += `/banners/${id}/${imageHash}.${fileExtension}`
             break
-        case "guild_splash":
+        case "default":
+            if(!discriminator) throw new Error('Discriminator wasn\'t provided.')
+
+            imageURL += `/embed/avatars/${discriminator % 5}.png`
             break
         default:
             throw new Error(`${imageType} is not a supported image type.`)
@@ -91,6 +111,57 @@ const getImage = (obj : DiscordImage) : string => {
     return imageURL
 }
 
+const getUser = (id : string) : Promise<DiscordUser> => {
+    return new Promise<DiscordUser>(async ( resolve , reject ) => {
+        try{
+            const req : AxiosResponse<any> = await axios({
+                method : "GET",
+                url : `https://discord.com/api/v8/users/${id}`,
+                headers : {
+                    "Authorization" : "" // Added a configuration file where you can input your bot token.
+                }
+            })
+
+            const { username , avatar : avatarHash , discriminator , public_flags } : DiscordResponseData = req.data
+            const avatarURL = (avatarHash === null) ? 
+                getImage({ imageType : "default" , fileExtension : "webp" , discriminator : +discriminator , size : 4096}) : 
+                (avatarHash.startsWith("a_")) ? 
+                getImage({ imageType : "user_avatar" , imageHash : avatarHash , id , fileExtension : "gif" , size : 4096 }) : 
+                getImage({ imageType : "user_avatar" , fileExtension : "webp" , imageHash : avatarHash , size : 4096 , id})
+
+            const badges = getDiscordBadges(public_flags)
+
+            resolve({
+                id,
+                username,
+                discriminator,
+                avatar : avatarURL,
+                badges
+            })
+
+        } catch (e) {
+            const error : AxiosError = e
+
+            if(error.response){
+                switch(error.response.status){
+                    case 404:
+                        reject("User not found!")
+                    case 401:
+                        reject("Unauthorized!")
+                    default:
+                        reject(error.response.status)
+                }
+            }
+
+            reject(error)
+        }
+    })
+}
+
 export default {
-    getImage
+    getImage,
+    getDiscordBadges,
+    getPremiumType,
+    getUser,
+    getDate
 }
