@@ -1,7 +1,9 @@
-import axios , { AxiosRequestConfig , AxiosError, AxiosResponse } from 'axios'
-import { isPowerOfTwo } from './util'
+import axios , { AxiosError, AxiosResponse } from 'axios'
+import { createCanvas , loadImage , registerFont } from "canvas"
+import { isPowerOfTwo } from '../util'
+import path from 'path'
 
-type numArray = Array<number>
+// Types
 type strArray = Array<string>
 type imageType = "default" | "guild_icon" | "user_avatar"
 type fileExtension = "png" | "jpeg" | "webp" | "gif"
@@ -31,6 +33,18 @@ interface DiscordUser {
     badges : strArray
 }
 
+interface DateResponse {
+    UTC : string;
+    ISO : string;
+    UNIX : number;
+}
+
+// Register Canvas Font
+registerFont(path.join(__dirname , "./Montserrat-Regular.ttf"), { family : "Montserrat" })
+
+/**
+ * @enum {number}
+ */
 enum discordBadges {
    "None",
    "Discord Employee" = 1 << 0,
@@ -48,6 +62,9 @@ enum discordBadges {
    "Early Verified Bot Developer" = 1 << 17
 }
 
+/**
+ * @enum {number}
+ */
 enum premiumTypes{
     "None",
     "Nitro Classic" = 1,
@@ -60,6 +77,11 @@ function enumKeysAndValue(obj : object) : [string , number][]{
 
 const discordBadgesArray = enumKeysAndValue(discordBadges)
 
+/**
+ * Get all the badges of a user
+ * @param {number} flag - user flag 
+ * @returns {string[]} - Array of badge names
+ */
 const getDiscordBadges = (flag : number) : string[] => {
     const userBadges : strArray = []
     discordBadgesArray.forEach(([badgeName , badgeFlag]) => badgeFlag & flag && userBadges.push(badgeName))
@@ -67,9 +89,19 @@ const getDiscordBadges = (flag : number) : string[] => {
     return userBadges
 }
 
+/**
+ * Get the premium type of a user
+ * @param {number} flag - user flag
+ * @returns {string} - premium type 
+ */
 const getPremiumType = (flag : 0 | 1 | 2) : string => premiumTypes[flag]
 
-const getDate = (id : string) : { UTC : string , ISO : string , UNIX : number } => {
+/**
+ * Get the date of a discord id
+ * @param {string} id - discord id
+ * @returns {DateResponse}
+ */
+const getDate = (id : string) : DateResponse => {
     const unixInMilli = (+id / 4194304) + 1420070400000
     const discordDate = new Date(unixInMilli)
 
@@ -80,6 +112,11 @@ const getDate = (id : string) : { UTC : string , ISO : string , UNIX : number } 
     }
 }
 
+/**
+ * Get the url of a user's profile link.
+ * @param {DiscordImage} obj
+ * @returns {string} - URL to image.
+ */
 const getImage = (obj : DiscordImage) : string => {
     const { imageHash , imageType , id , fileExtension , size , discriminator } = obj
     const baseURL = "https://cdn.discordapp.com"
@@ -111,6 +148,11 @@ const getImage = (obj : DiscordImage) : string => {
     return imageURL
 }
 
+/**
+ * Get information on a discord user with an id
+ * @param {string} id - discord id 
+ * @return {DiscordUser} an object containing information about the user
+ */
 const getUser = (id : string) : Promise<DiscordUser> => {
     return new Promise<DiscordUser>(async ( resolve , reject ) => {
         try{
@@ -118,7 +160,8 @@ const getUser = (id : string) : Promise<DiscordUser> => {
                 method : "GET",
                 url : `https://discord.com/api/v8/users/${id}`,
                 headers : {
-                    "Authorization" : "" // Added a configuration file where you can input your bot token.
+                    "Authorization" : "" /* Add your bot token here. Will have an .env file to add envirn vars */ ,
+                    "User-Agent" : `DiscordBot ($https://discord.com/api/v8/users/${id}, $8)`
                 }
             })
 
@@ -142,20 +185,68 @@ const getUser = (id : string) : Promise<DiscordUser> => {
         } catch (e) {
             const error : AxiosError = e
 
-            if(error.response){
-                switch(error.response.status){
-                    case 404:
-                        reject("User not found!")
-                    case 401:
-                        reject("Unauthorized!")
-                    default:
-                        reject(error.response.status)
-                }
-            }
+            if(error.response) reject(error.response.status)
 
             reject(error)
         }
     })
+}
+
+/**
+ * Creates a signature with Canvas using details of a Discord user.
+ * @param {string} avatarURL - discord avatar url
+ * @param {string} id - discord ID
+ * @param {string} username - discord username
+ * @returns {PromiseLike<string>} - data url
+ */
+const createSignature = async (avatarURL : string , id : string , username : string) : Promise<string> => {
+    // const usernameRegex = /.+#[0-9]{4}/g
+    // const searchForMatch = usernameRegex.exec(username)
+
+    // if(searchForMatch === null) throw new Error("Username is invalid. Please use the full username along with the discriminator.")
+
+    // username = searchForMatch[0] // The full string of characters matched.
+
+    const canvas = createCanvas(800 , 200)
+    const ctx = canvas.getContext("2d")
+
+    ctx.fillStyle = "#36393F"
+    
+    //Background
+    ctx.fillRect(0 , 0 , canvas.width , canvas.height)
+    
+    // Draw Icon
+    const image = await loadImage(avatarURL)
+    ctx.drawImage(image, 10 , 10 , 180 , canvas.height - 20)
+
+    // Text
+    ctx.textAlign = "right"
+    ctx.fillStyle = "white"
+    ctx.font = `16px "Montserrat"`
+    ctx.fillText("https://discordsearcher.pw" , canvas.width - 10, canvas.height - 10)
+    ctx.textAlign = "center"
+
+    const usernameLength = username.split("#")[0].length
+
+    switch(true){
+        case (usernameLength <= 10):
+            ctx.font = '64px "Montserrat"'
+            break
+        case (usernameLength > 10 && usernameLength <= 18):
+            ctx.font = '48px "Montserrat"'
+            break
+        case (usernameLength > 18 && usernameLength <= 26):
+            ctx.font = '32px "Montserrat"'
+            break
+        default:
+            ctx.font = '24px "Montserrat"'
+    }
+
+    ctx.fillText(username , (canvas.width / 2) + 95, (canvas.height / 2) , 550)
+    ctx.font = '32px "Montserrat"'
+    ctx.fillText(id , (canvas.width / 2) + 95 , (canvas.height / 2) + 30)
+
+    return canvas.toDataURL()
 }
 
 export default {
@@ -163,5 +254,6 @@ export default {
     getDiscordBadges,
     getPremiumType,
     getUser,
-    getDate
+    getDate,
+    createSignature
 }

@@ -46,15 +46,20 @@ test("getPremiumType()" , () => {
 })
 
 test("getUser()" , async () => {
-    expect(discord.getUser("424606447867789312")).resolves.toStrictEqual(user1)
-    expect(discord.getUser("509407382347055104")).resolves.toStrictEqual(user2)
-    expect(discord.getUser("1")).rejects.toMatch("User not found!")
+    expect(discord.getUser(user1.id)).resolves.toStrictEqual(user1)
+    expect(discord.getUser(user2.id)).resolves.toStrictEqual(user2)
+    expect(discord.getUser("1")).rejects.not.toBeNaN()
 })
 
-test("getDate" , () => {
-    expect(discord.getDate("424606447867789312")).toStrictEqual({
+test("getDate()" , () => {
+    expect(discord.getDate(user1.id)).toStrictEqual({
         UTC : "Sat, 17 Mar 2018 16:34:25 GMT",
         ISO : "2018-03-17T16:34:25.978Z",
         UNIX : 1521304465
     })
+})
+
+test("createSignature()" , () => {
+    expect(discord.createSignature("https://cdn.discordapp.com/avatars/424606447867789312/3f2290152cc9eaef437db2e365cce095.png" , user1.id , user1.username + user1.discriminator)).resolves.toBeDefined()
+    expect(discord.createSignature(user1.avatar , user1.id , user1.username + user1.discriminator)).rejects.toThrowError()
 })
